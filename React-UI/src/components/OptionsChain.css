@@ -1,0 +1,22 @@
+/* src/components/OptionsChain.css */
+.oc-wrap { width: 100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+.oc-controls { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.oc-input { padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; }
+.oc-btn { padding: 10px 18px; font-size: 16px; border-radius: 8px; border: none; background:#646cff; color:#fff; cursor:pointer; }
+.oc-btn[disabled]{ opacity:.7; cursor:default; }
+.oc-card { width: 100%; border: 1px solid #333; border-radius: 12px; overflow: hidden; background:#1b1b1b; }
+.oc-titlebar { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; color:#fff; border-bottom:1px solid #333; }
+.oc-subtle { color:#9ca3af; font-size: 12px; }
+.oc-grid { display: grid; width: 100%; grid-template-columns: 1fr 1fr minmax(72px, 0.7fr) 1fr 1fr; }
+.oc-header { background:#2a2a40; color:#e5e7eb; border-bottom:1px solid #333; font-size: 13px; }
+.oc-row { background:#242424; color:#fff; font-size: 13px; border-bottom:1px solid #333; transition: background-color 120ms ease; }
+.oc-row:nth-child(odd){ background:#2e2e3e; }
+.oc-row:hover { background:#3a3a55; }
+.oc-cell { padding:10px 12px; border-right:1px solid #333; white-space:nowrap; text-align:right; }
+.oc-cell:last-child{ border-right:none; }
+.oc-cell.center { text-align:center; font-weight:600; background:#1f2937; }
+.oc-body { max-height: 560px; overflow-y: auto; }
+@media (max-width: 640px) {
+  .oc-cell { padding:8px 8px; font-size:12px; }
+  .oc-grid { grid-template-columns: 1fr 1fr minmax(64px, 0.8fr) 1fr 1fr; }
+}
