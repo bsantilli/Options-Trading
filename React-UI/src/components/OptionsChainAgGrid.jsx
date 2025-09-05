@@ -16,12 +16,14 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 
 export default function OptionsChainAgGrid() {
+
   const [root, setRoot] = useState("AAPL");
   const [exp, setExp] = useState("20250905");
   const [meta, setMeta] = useState(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [rowData, setRowData] = useState([]);
+  const [requested, setRequested] = useState(false);
 
   const gridApiRef = useRef(null);
   const abortRef = useRef(null);
@@ -105,6 +107,7 @@ export default function OptionsChainAgGrid() {
   }, []);
 
   const load = useCallback(async () => {
+    setRequested(true);
     setLoading(true);
     setErr("");
     setRowData([]);
@@ -127,7 +130,7 @@ export default function OptionsChainAgGrid() {
 
   return (
     <div style={{ width: "100%", fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" }}>
-      <h1 style={{ margin: "0 0 12px", fontSize: 22, color: "#e2e8f0" }}>Options Dashboard (AG Grid)</h1>
+      <h1 style={{ margin: "0 0 12px", fontSize: 22 }}>Options Chain</h1>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <input
@@ -136,6 +139,11 @@ export default function OptionsChainAgGrid() {
           value={root}
           onChange={(e) => setRoot(e.target.value.toUpperCase())}
           placeholder="Enter ticker (e.g., AAPL)"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              load();   // ← call the same function the button uses
+            }
+          }}
         />
         <input
           style={{ padding: 10, fontSize: 16, borderRadius: 8, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", minWidth: 140 }}
@@ -143,6 +151,11 @@ export default function OptionsChainAgGrid() {
           value={exp}
           onChange={(e) => setExp(e.target.value)}
           placeholder="YYYYMMDD"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              load();   // ← call the same function the button uses
+            }
+          }}
         />
         <button
           style={{ padding: "10px 18px", fontSize: 16, borderRadius: 8, border: "none", background: "#6366f1", color: "#fff", cursor: "pointer", opacity: loading ? 0.7 : 1 }}
@@ -154,7 +167,7 @@ export default function OptionsChainAgGrid() {
       </div>
 
       {meta && (
-        <div style={{ marginBottom: 8, fontSize: 12, opacity: 0.9, color: "#cbd5e1" }}>
+        <div style={{ marginBottom: 8, fontSize: 12, opacity: 0.9, color: "#444" }}>
           Rows: <b>{meta.count}</b> &nbsp; (root=<b>{meta.root}</b>, exp=<b>{formatExp(meta.exp)}</b>)
         </div>
       )}
@@ -165,26 +178,34 @@ export default function OptionsChainAgGrid() {
         </div>
       )}
 
-      {/* No theme class and no CSS imports — Theming API supplies styles */}
-      <div style={{ width: "100%", height: 560 }}>
-        <AgGridReact
-          theme={darkCompactTheme}
-          rowData={rowData}
-          columnDefs={columnDefs}
-          defaultColDef={defaultColDef}
-          onGridReady={onGridReady}
-          getRowId={getRowId}
-          rowHeight={34}
-          headerHeight={34}
-          groupHeaderHeight={34}
-          animateRows
-        />
-      </div>
+      {requested && !loading && !err && rowData.length > 0 && (
+        <div style={{ width: "100%", height: 560 }}>
+          <AgGridReact
+            theme={darkCompactTheme}
+            rowData={rowData}
+            columnDefs={columnDefs}
+            defaultColDef={defaultColDef}
+            onGridReady={onGridReady}
+            getRowId={getRowId}
+            rowHeight={34}
+            headerHeight={34}
+            groupHeaderHeight={34}
+            animateRows
+          />
+        </div>
+      )}
 
-      <style>{`
-        /* Center/weight Strike column like your custom grid */
-        .strike-center { font-weight: 600; background: #111827; color: #e5e7eb; }
-      `}</style>
+
+      {/* Optional empty state (appears after click if zero rows) */}
+      {!loading && !err && rowData.length === 0 && (
+        <div style={{ opacity: 0.8, padding: 16, border: "1px dashed #334155", borderRadius: 8, color: "#444" }}>
+          No rows yet. Enter a root/exp and click <b>Load Chain</b>.
+        </div>
+      )}
+
+
+
+
     </div>
   );
 }
