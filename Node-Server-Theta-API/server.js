@@ -4,39 +4,21 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-
 // Put in .env and load with dotenv in real projects
 //const PORT = process.env.PORT || 5000;
-const THETA_BASE_URL = process.env.THETA_BASE_URL || "http://127.0.0.1:25510/v2";
-const PORT = 5000;   // need to investigate how to use process.env
+const THETA_BASE_URL = process.env.THETA_BASE_URL;
+const PORT = Number(process.env.PORT);
+
+// Optional: configurable CORS origins via env
+const corsOrigins = (process.env.CORS_ORIGINS)
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
 
 const app = express();
-
-// Allow your front-end origins (adjust as needed)
-app.use(cors({ origin: ["http://localhost:3000", "http://localhost:5173"] }));
+app.use(cors({ origin: corsOrigins }));
 app.use(express.json());
 
-
-// Define a simple route
-app.get("/", (req,res)=>{
-res.send("Hello from the server");
-});
-
-
-/**
- * Parse a Theta bulk_snapshot NDJSON/text response into an array of objects.
- * Many Theta endpoints return newline-delimited JSON (not a single JSON array).
- * We’ll split on newlines and JSON.parse each non-empty line.
- */
-function parseNdjsonToArray(text) {
-  const out = [];
-  for (const line of text.split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t) continue;
-    try { out.push(JSON.parse(t)); } catch {}
-  }
-  return out;
-}
 
 // Fetch all pages; gracefully handles JSON or NDJSON pages + both pagination styles
 async function fetchAllOptionSnapshotsJSON({ baseUrl, root, exp }) {
@@ -72,22 +54,7 @@ async function fetchAllOptionSnapshotsJSON({ baseUrl, root, exp }) {
   return { items: all, header };
 }
 
-const validateParams = (root, exp, res) => {
-  if (!root || typeof root !== "string") {
-    res.status(400).json({ error: "Missing or invalid 'root' (e.g., AAPL)" });
-    return false;
-  }
-  if (!/^\d{8}$/.test(String(exp))) {
-    res.status(400).json({ error: "Missing or invalid 'exp' (YYYYMMDD, e.g., 20260116)" });
-    return false;
-  }
-  return true;
-};
-
-
-
 // --- helpers ---
-
 // Parse possible NDJSON OR JSON body into { items[], header? }
 function parseThetaPage(text) {
   // Try JSON object (your sample shape)
@@ -132,14 +99,14 @@ function toStrikeDollars(minor) {
   const n = Number(minor);
   // Heuristic: your sample 20000 → 200.00 (÷100). Some feeds use ÷1000 (e.g., 180000 → 180.00).
   if (n >= 100000) return n / 1000; // 180000 -> 180.000
-  if (n >= 10000)  return n / 100;  // 20000  -> 200.00
+  if (n >= 10000) return n / 100;  // 20000  -> 200.00
   return n / 100;                   // sensible default
 }
 
 function normRight(v) {
   const s = String(v ?? "").toUpperCase();
   if (s === "C" || s === "CALL") return "C";
-  if (s === "P" || s === "PUT")  return "P";
+  if (s === "P" || s === "PUT") return "P";
   return null;
 }
 
@@ -149,9 +116,7 @@ function normRight(v) {
  * Fetch *all* pages by following the Next-Page header.
  * Returns a single flattened array of snapshot objects.
  */
-
 // ----------------------------------------------------------------
-
 // Options chain: Calls | Strike | Puts with Bid/Ask only
 // Replace your /api/theta/options-chain handler with this hardened version.
 // --- route ---
@@ -163,7 +128,7 @@ app.get("/api/theta/options-chain", async (req, res) => {
       return res.status(400).json({ error: "Required query params: root, exp=YYYYMMDD" });
     }
 
-    const baseUrl = process.env.THETA_BASE_URL || "http://127.0.0.1:25510/v2";
+    const baseUrl = process.env.THETA_BASE_URL /*|| "http://127.0.0.1:25510/v2"*/;
     const { items, header } = await fetchAllOptionSnapshotsJSON({ baseUrl, root, exp });
 
     // Derive indices from header.format with safe fallbacks
@@ -220,64 +185,9 @@ app.get("/api/theta/options-chain", async (req, res) => {
   }
 });
 
-
-/**
- * GET /api/theta/options-snapshot?root=AAPL&exp=20250117
- */
-app.get("/api/theta/options-snapshot", async (req, res) => {
-  try {
-    const { root, exp } = req.query;
-    if (!validateParams(root, exp, res)) return;
-
-    // IMPORTANT: pass baseUrl so it's never undefined
-    const data = await fetchAllOptionSnapshotsJSON({ root, exp, baseUrl: THETA_BASE_URL });
-    res.json({ count: data.length, results: data });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: String(err.message || err) });
-  }
-});
-
-
-/**
- * GET /api/theta/roots
- * Optional query params are passed straight through to Theta (e.g., ?asset_class=stock).
- * Returns concatenated text across all pages.
- */
-
-app.get("/api/theta/roots", async (req, res) => {
-  try {
-    const params = new URLSearchParams(req.query); // pass-through filters
-    let url = `${THETA_BASE_URL}/list/roots/stock?${params.toString()}`;
-
-    // We'll accumulate text pages; if Theta returns CSV/lines, we’ll join with newlines.
-    const pages = [];
-
-    while (url) {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Theta responded with status ${response.status}`);
-      }
-
-      const pageText = await response.text();
-      pages.push(pageText);
-
-      const nextPage = response.headers.get("Next-Page");
-      url = nextPage && nextPage !== "null" ? nextPage : null;
-    }
-
-    // If Theta returns text/CSV, keep text. If it’s JSON per line (NDJSON), you can parse here.
-    res.type("text/plain").send(pages.join("\n"));
-  } catch (err) {
-    console.error("Theta proxy error:", err);
-    res.status(502).json({ error: "Upstream Theta error", details: String(err) });
-  }
-});
-
-
 //*****************************************************************************//
 // START SERVER
 //*****************************************************************************//
-app.listen(PORT, ()=>{
-console.log(`Server is running on port ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
