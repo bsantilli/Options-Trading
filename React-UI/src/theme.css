@@ -1,0 +1,77 @@
+/* src/theme.css */
+:root{
+  /* base & surfaces */
+  --bg: #161b22;
+  --surface: #1e2630;
+  --border: #30363d;
+
+  /* text */
+  --text: #e6edf3;
+  --text-muted: #9da7b3;
+
+  /* accents */
+  --accent: #2f81f7;   /* blue */
+  --accent-2: #7ee787; /* green */
+  --accent-3: #f778ba; /* pink */
+  --warn: #d29922;     /* gold */
+
+  /* states */
+  --hover: #1b2230;
+  --active: #0b61d8;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+/* Layout */
+.app-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  padding: 16px 12px;
+  position: sticky; top: 0; height: 100vh;
+}
+
+.brand {
+  font-weight: 700; letter-spacing: .3px; padding: 8px 10px; margin-bottom: 12px;
+}
+
+.nav {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.nav-link {
+  display: flex; align-items: center;
+  gap: 10px; padding: 10px 12px;
+  border-radius: 10px; text-decoration: none;
+  color: var(--text);
+}
+.nav-link:hover { background: var(--hover); }
+.nav-link.active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+/* Main content */
+.main {
+  padding: 20px;
+}
+
+/* Generic card surface */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}

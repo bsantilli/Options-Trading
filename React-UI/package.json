@@ -11,6 +11,7 @@
     "ag-grid-react": "^34.1.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-router-dom": "^7.8.2",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
