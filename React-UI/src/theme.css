@@ -1,23 +1,23 @@
 /* src/theme.css */
 :root{
   /* base & surfaces */
-  --bg: #161b22;
-  --surface: #1e2630;
-  --border: #30363d;
+  --bg: #181818;
+  --surface: #33363a;
+  --border: #4a4b4d;
 
   /* text */
-  --text: #e6edf3;
+  --text: #ffffff;
   --text-muted: #9da7b3;
 
   /* accents */
-  --accent: #2f81f7;   /* blue */
+  --accent: #6d6f72;   /* blue */
   --accent-2: #7ee787; /* green */
   --accent-3: #f778ba; /* pink */
   --warn: #d29922;     /* gold */
 
   /* states */
-  --hover: #1b2230;
-  --active: #0b61d8;
+  --hover: #262626;
+  --active: #d0d4db;
 }
 
 * { box-sizing: border-box; }
