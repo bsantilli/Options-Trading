@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import helmet from "helmet";
+import morgan from "morgan";
 
 dotenv.config();
 
@@ -16,6 +18,8 @@ const corsOrigins = (process.env.CORS_ORIGINS)
   .filter(Boolean);
 
 const app = express();
+app.use(helmet());
+app.use(morgan("dev"));
 app.use(cors({ origin: corsOrigins }));
 app.use(express.json());
 
@@ -120,6 +124,10 @@ function normRight(v) {
 // Options chain: Calls | Strike | Puts with Bid/Ask only
 // Replace your /api/theta/options-chain handler with this hardened version.
 // --- route ---
+
+// Health check
+app.get("/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
 
 app.get("/api/theta/options-chain", async (req, res) => {
   try {
