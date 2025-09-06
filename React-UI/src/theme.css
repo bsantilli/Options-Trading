@@ -3,14 +3,14 @@
   /* base & surfaces */
   --bg: #181818;
   --surface: #33363a;
-  --border: #4a4b4d;
+  --border: #8c8d8f;
 
   /* text */
   --text: #ffffff;
-  --text-muted: #9da7b3;
+  --text-muted: #83878b;
 
   /* accents */
-  --accent: #6d6f72;   /* blue */
+  --accent: #99a6b3;   /* blue */
   --accent-2: #7ee787; /* green */
   --accent-3: #f778ba; /* pink */
   --warn: #d29922;     /* gold */

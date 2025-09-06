@@ -58,6 +58,9 @@ async function fetchAllOptionSnapshotsJSON({ baseUrl, root, exp }) {
   return { items: all, header };
 }
 
+
+
+
 // --- helpers ---
 // Parse possible NDJSON OR JSON body into { items[], header? }
 function parseThetaPage(text) {
@@ -128,7 +131,6 @@ function normRight(v) {
 // Health check
 app.get("/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
-
 app.get("/api/theta/options-chain", async (req, res) => {
   try {
     const { root, exp, debug } = req.query;
@@ -192,6 +194,118 @@ app.get("/api/theta/options-chain", async (req, res) => {
     res.status(500).json({ error: String(err.message || err) });
   }
 });
+
+app.get("/api/theta/option-expirations", async(req, res) => {
+try {
+  const root = String(req.query.root || "").trim().toUpperCase();
+  if (!root || !/^[A-Z.\-]{1,8}$/.test(root)) {
+    return res.status(400).json({ error: "Invalid or missing ?root symbol" });
+  }
+
+  const baseUrl = THETA_BASE_URL || "http://127.0.0.1:25510/v2";
+  const params = new URLSearchParams({ root });
+  let url = `${baseUrl}/list/expirations?${params.toString()}`;
+
+  // --- helpers ---
+  const asYMD = (v) => {
+    const s = String(v ?? "").trim();
+    return /^\d{8}$/.test(s) ? s : null; // accept numeric or string YYYYMMDD
+  };
+  const yyyymmddToDate = (ymd) => {
+    const y = Number(ymd.slice(0, 4));
+    const m = Number(ymd.slice(4, 6));
+    const d = Number(ymd.slice(6, 8));
+    return new Date(y, m - 1, d);
+  };
+  const isThirdFriday = (dt) => dt.getDay() === 5 && dt.getDate() >= 15 && dt.getDate() <= 21;
+  const labelFor = (ymd) => {
+    const dt = yyyymmddToDate(ymd);
+    const mon = dt.toLocaleString("en-US", { month: "short" });
+    const day = String(dt.getDate()).padStart(2, "0");
+    const base = `${mon} ${day}`;
+    return isThirdFriday(dt) ? base : `${base} (W)`;
+  };
+  const todayYMD = (tz = "America/New_York") => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const obj = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    // en-CA gives YYYY-MM-DD parts
+    return `${obj.year}${obj.month}${obj.day}`;
+  };
+  const cutoff = todayYMD(); // keep today and future only
+
+  // --- collect across paginated responses ---
+  const seen = new Set();
+  while (url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      return res.status(response.status).json({ error: `Theta response ${response.status}: ${body}` });
+    }
+
+    const text = await response.text();
+
+    // Expected shape per Theta docs:
+    // { "header": { "format": ["date"], ... }, "response": [20241011, 20241018, ...] }
+    let bodyNextPage = null;
+    let parsed = false;
+    try {
+      const obj = JSON.parse(text);
+      if (obj && Array.isArray(obj.response)) {
+        parsed = true;
+        for (const v of obj.response) {
+          const ymd = asYMD(v);
+          if (ymd && Number(ymd) >= Number(cutoff)) seen.add(ymd);
+        }
+        bodyNextPage = obj?.header?.next_page || null;
+      }
+    } catch {
+      // Fallback: NDJSON/line-delimited tolerance (just in case)
+    }
+
+    if (!parsed) {
+      for (const line of text.split(/\r?\n/)) {
+        const t = line.trim();
+        if (!t) continue;
+        const direct = asYMD(t);
+        if (direct) {
+          if (Number(direct) >= Number(cutoff)) seen.add(direct);
+          continue;
+        }
+        try {
+          const o = JSON.parse(t);
+          const ymd = asYMD(o?.date ?? o?.yyyymmdd ?? o?.exp ?? o);
+          if (ymd && Number(ymd) >= Number(cutoff)) seen.add(ymd);
+          if (!bodyNextPage && o?.header?.next_page) bodyNextPage = o.header.next_page;
+        } catch { /* ignore */ }
+      }
+    }
+
+    const headerNext = response.headers.get("Next-Page");
+    url =
+      headerNext && headerNext !== "null"
+        ? headerNext
+        : bodyNextPage && bodyNextPage !== "null"
+        ? bodyNextPage
+        : null;
+  }
+
+  // Normalize + sort ascending + label
+  const out = Array.from(seen)
+    .sort((a, b) => Number(a) - Number(b))
+    .map((yyyymmdd) => ({ yyyymmdd, label: labelFor(yyyymmdd) }));
+
+  return res.json(out);
+} catch (err) {
+  console.error("option-expirations error:", err);
+  return res.status(500).json({ error: String(err.message || err) });
+}
+  });  
+
 
 //*****************************************************************************//
 // START SERVER
