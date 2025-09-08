@@ -1,7 +1,7 @@
 // src/components/OptionsChainAgGrid.jsx
 import { useState, useEffect } from "react";
 import { getOptionsChain, getExpirations } from "../services/optionsService";
-import { fmt, fmtStrike, formatExp } from "../utils/formatters";
+import { fmt, fmtStrike, formatExp, fmtInt } from "../utils/formatters";
 
 // simple helpers
 const fmtNum = (n, d = 2) =>
@@ -282,9 +282,9 @@ export default function OptionsChainAgGrid() {
           zIndex: 2,
           display: "grid",
           gridTemplateColumns: `
-            repeat(3, minmax(80px, 1fr))
+            repeat(4, minmax(80px, 1fr))
             minmax(80px, 1fr)
-            repeat(3, minmax(80px, 1fr))
+            repeat(4, minmax(80px, 1fr))
           `,
           backgroundColor: "#1f1f2e",
           color: "white",
@@ -293,13 +293,13 @@ export default function OptionsChainAgGrid() {
           borderBottom: "1px solid #444",
         }}
       >
-        <div style={{ gridColumn: "1 / span 3", textAlign: "center", padding: "8px 0" }}>
+        <div style={{ gridColumn: "1 / span 4", textAlign: "center", padding: "8px 0" }}>
           PUTS
         </div>
-        <div style={{ gridColumn: "4 / span 1", textAlign: "center", padding: "8px 0" }}>
+        <div style={{ gridColumn: "5 / span 1", textAlign: "center", padding: "8px 0" }}>
           {formatExp(activeExpiry)}
         </div>
-        <div style={{ gridColumn: "5 / span 3", textAlign: "center", padding: "8px 0" }}>
+        <div style={{ gridColumn: "6 / span 4", textAlign: "center", padding: "8px 0" }}>
           CALLS
         </div>
       </div>
@@ -312,9 +312,9 @@ export default function OptionsChainAgGrid() {
           zIndex: 2,
           display: "grid",
           gridTemplateColumns: `
-            repeat(3, minmax(80px, 1fr))
+            repeat(4, minmax(80px, 1fr))
             minmax(80px, 1fr)
-            repeat(3, minmax(80px, 1fr))
+            repeat(4, minmax(80px, 1fr))
           `,
           backgroundColor: "#2a2a40",
           color: "#e5e7eb",
@@ -322,6 +322,7 @@ export default function OptionsChainAgGrid() {
           fontSize: 13,
         }}
       >
+        <CellHeader>Open Interest</CellHeader>
         <CellHeader>Bid/Sell</CellHeader>
         <CellHeader>Mid</CellHeader>
         <CellHeader>Ask/Buy</CellHeader>
@@ -329,6 +330,7 @@ export default function OptionsChainAgGrid() {
         <CellHeader>Bid/Sell</CellHeader>
         <CellHeader>Mid</CellHeader>
         <CellHeader>Ask/Buy</CellHeader>
+        <CellHeader>Open Interest</CellHeader>
       </div>
 
       {/* Data rows (scroll within container) */}
@@ -356,9 +358,9 @@ export default function OptionsChainAgGrid() {
             style={{
               display: "grid",
               gridTemplateColumns: `
-                repeat(3, minmax(80px, 1fr))
+                repeat(4, minmax(80px, 1fr))
                 minmax(80px, 1fr)
-                repeat(3, minmax(80px, 1fr))
+                repeat(4, minmax(80px, 1fr))
               `,
               borderBottom: "1px solid #333",
             }}
@@ -374,11 +376,13 @@ export default function OptionsChainAgGrid() {
               return (
                 <>
                   {/* Calls (left side in your current layout) */}
+                  <CellNumber bg={isHover ? hoverBg : rowBg}>{fmtInt(r.callOI)}</CellNumber>
                   <CellNumber bg={isHover ? hoverBg : rowBg}>{fmtNum(r.callBid)}</CellNumber>
                   <CellNumber bg={isHover ? hoverBg : rowBg}>
                     {r.callBid != null && r.callAsk != null ? fmtNum((r.callBid + r.callAsk) / 2) : "—"}
                   </CellNumber>
                   <CellNumber bg={isHover ? hoverBg : rowBg}>{fmtNum(r.callAsk)}</CellNumber>
+                  
 
                   {/* Strike */}
                   <CellStrike bg={isHover ? hoverBg : strikeBg}>{fmtStrike(r.strike)}</CellStrike>
@@ -389,6 +393,7 @@ export default function OptionsChainAgGrid() {
                     {r.putBid != null && r.putAsk != null ? fmtNum((r.putBid + r.putAsk) / 2) : "—"}
                   </CellNumber>
                   <CellNumber bg={isHover ? hoverBg : rowBg}>{fmtNum(r.putAsk)}</CellNumber>
+                  <CellNumber bg={isHover ? hoverBg : rowBg}>{fmtInt(r.putOI)}</CellNumber>
                 </>
               );
             })()}

@@ -6,14 +6,11 @@ import morgan from "morgan";
 
 dotenv.config();
 
-// Put in .env and load with dotenv in real projects
-// const PORT = process.env.PORT || 5000;
-const THETA_BASE_URL = process.env.THETA_BASE_URL;            // (v2 or your existing base)
 const THETA_V3_BASE_URL = process.env.THETA_V3_BASE_URL || "http://localhost:25503/v3";
 const PORT = Number(process.env.PORT);
 
 // Optional: configurable CORS origins via env
-const corsOrigins = (process.env.CORS_ORIGINS)
+const corsOrigins = (process.env.CORS_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -21,176 +18,41 @@ const corsOrigins = (process.env.CORS_ORIGINS)
 const app = express();
 app.use(helmet());
 app.use(morgan("dev"));
-app.use(cors({ origin: corsOrigins }));
+app.use(cors({ origin: corsOrigins.length ? corsOrigins : true }));
 app.use(express.json());
 
-// Fetch all pages; gracefully handles JSON or NDJSON pages + both pagination styles
-async function fetchAllOptionSnapshotsJSON({ baseUrl, root, exp }) {
-  const params = new URLSearchParams({ root, exp });
-  let url = `${baseUrl}/bulk_snapshot/option/quote?${params.toString()}`;
+// ------------------ small helpers ------------------
+const isYYYYMMDD = (s) => typeof s === "string" && /^\d{8}$/.test(s);
+const isISODate = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
-  const all = [];
-  let header = null;
-
-  while (url) {
-    const res = await fetch(url);
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Theta fetch failed: ${res.status} ${body}`);
-    }
-    const text = await res.text();
-    const { items, header: pageHeader } = parseThetaPage(text);
-
-    if (pageHeader && !header) header = pageHeader; // first page header
-    all.push(...items);
-
-    // Try HTTP header first, then body header.next_page
-    const hNext = res.headers.get("Next-Page");
-    if (hNext && hNext !== "null") {
-      url = hNext;
-    } else if (pageHeader?.next_page && pageHeader.next_page !== "null") {
-      url = pageHeader.next_page;
-    } else {
-      url = null;
-    }
-  }
-
-  return { items: all, header };
+function ymdToIso(ymd) {
+  if (!isYYYYMMDD(ymd)) throw new Error("exp must be YYYYMMDD");
+  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`;
 }
 
-// --- helpers ---
-// Parse possible NDJSON OR JSON body into { items[], header? }
-function parseThetaPage(text) {
-  // Try JSON object (your sample shape)
-  try {
-    const obj = JSON.parse(text);
-    if (obj && Array.isArray(obj.response)) {
-      return { items: obj.response, header: obj.header || null };
-    }
-  } catch {
-    // Fall through to NDJSON
-  }
-
-  // NDJSON: header line + many contract lines
-  const items = [];
-  let header = null;
-  for (const line of text.split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t) continue;
-    try {
-      const o = JSON.parse(t);
-      if (o && o.header) header = o.header;
-      else if (o && o.contract) items.push(o);
-    } catch {
-      // ignore bad line
-    }
-  }
-  return { items, header };
+function isoToYmd(iso) {
+  if (!isISODate(iso)) throw new Error("exp must be YYYY-MM-DD");
+  return iso.replaceAll("-", "");
 }
 
-// Find index of a field (e.g. "bid", "ask") from header.format, fallback if missing
-function getFieldIndex(header, key, fallback) {
-  const fmt = header?.format;
-  if (Array.isArray(fmt)) {
-    const idx = fmt.indexOf(key);
-    if (idx !== -1) return idx;
-  }
-  return fallback;
-}
-
-// Strike minor-units -> dollars
-function toStrikeDollars(minor) {
-  const n = Number(minor);
-  // Heuristic: your sample 20000 → 200.00 (÷100). Some feeds use ÷1000 (e.g., 180000 → 180.00).
-  if (n >= 100000) return n / 1000; // 180000 -> 180.000
-  if (n >= 10000) return n / 100; // 20000  -> 200.00
-  return n / 100; // sensible default
-}
-
-function normRight(v) {
+const normRight = (v) => {
   const s = String(v ?? "").toUpperCase();
   if (s === "C" || s === "CALL") return "C";
   if (s === "P" || s === "PUT") return "P";
   return null;
-}
+};
+
+const fmtNum = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
 // Health check
-app.get("/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+app.get("/health", (_req, res) =>
+  res.json({ ok: true, time: new Date().toISOString() })
+);
 
 /**
- * Options chain: Calls | Strike | Puts with Bid/Ask only
- * (unchanged)
- */
-app.get("/api/theta/options-chain", async (req, res) => {
-  try {
-    const { root, exp, debug } = req.query;
-    if (!root || !/^\d{8}$/.test(String(exp))) {
-      return res.status(400).json({ error: "Required query params: root, exp=YYYYMMDD" });
-    }
-
-    const baseUrl = process.env.THETA_BASE_URL /* || "http://127.0.0.1:25510/v2" */;
-    const { items, header } = await fetchAllOptionSnapshotsJSON({ baseUrl, root, exp });
-
-    // Derive indices from header.format with safe fallbacks
-    const bidIdx = getFieldIndex(header, "bid", 3);
-    const askIdx = getFieldIndex(header, "ask", 7);
-
-    // Build chain: merge calls & puts per strike (latest tick = last in ticks[])
-    const byStrike = new Map();
-
-    for (const it of items) {
-      const c = it?.contract;
-      if (!c?.strike || !c?.right) continue;
-
-      const ticks = Array.isArray(it?.ticks) ? it.ticks : [];
-      const last = ticks.length ? ticks[ticks.length - 1] : null;
-      const bid = last ? Number(last[bidIdx]) : null;
-      const ask = last ? Number(last[askIdx]) : null;
-
-      const strike = toStrikeDollars(c.strike);
-      const key = strike.toFixed(2);
-      const side = normRight(c.right);
-      if (!side) continue;
-
-      if (!byStrike.has(key)) {
-        byStrike.set(key, { strike, callBid: null, callAsk: null, putBid: null, putAsk: null });
-      }
-      const row = byStrike.get(key);
-
-      if (side === "C") {
-        if (bid != null) row.callBid = bid;
-        if (ask != null) row.callAsk = ask;
-      } else {
-        if (bid != null) row.putBid = bid;
-        if (ask != null) row.putAsk = ask;
-      }
-    }
-
-    const chain = Array.from(byStrike.values()).sort((a, b) => a.strike - b.strike);
-
-    if (debug === "1") {
-      return res.json({
-        root,
-        exp,
-        format: header?.format || null,
-        countIn: items.length,
-        countOut: chain.length,
-        sampleOut: chain.slice(0, 5),
-      });
-    }
-
-    res.json({ root, exp, count: chain.length, results: chain });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: String(err.message || err) });
-  }
-});
-
-/**
- * UPDATED: Option expirations via Theta v3
- * - Accepts ?symbol= or ?root= (back-compat)
- * - Calls /v3/option/list/expirations
- * - Returns [{ yyyymmdd, label }, ...] with only today-or-future dates
+ * v3 Option expirations (already added; kept as-is)
+ * Input:  ?symbol=TSLA  (or ?root=TSLA for back-compat)
+ * Output: [{ yyyymmdd, label }, ...] (today + future only)
  */
 app.get("/api/theta/option-expirations", async (req, res) => {
   try {
@@ -199,7 +61,7 @@ app.get("/api/theta/option-expirations", async (req, res) => {
       return res.status(400).json({ error: "Invalid or missing ?symbol (or ?root) parameter" });
     }
 
-    // --- helpers ---
+    // helpers
     const toYYYYMMDD = (iso /* 'YYYY-MM-DD' */) => String(iso ?? "").replaceAll("-", "");
     const yyyymmddToDate = (ymd) => {
       const y = Number(ymd.slice(0, 4));
@@ -217,31 +79,24 @@ app.get("/api/theta/option-expirations", async (req, res) => {
     };
     const todayYMD = (tz = "America/New_York") => {
       const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: tz,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
+        timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
       }).formatToParts(new Date());
       const obj = Object.fromEntries(parts.map((p) => [p.type, p.value]));
       return `${obj.year}${obj.month}${obj.day}`;
     };
-    const cutoff = todayYMD(); // keep today and future only
+    const cutoff = todayYMD();
 
-    // --- v3 request ---
-    const THETA_V3_BASE_URL = process.env.THETA_V3_BASE_URL || "http://localhost:25503/v3";
-    const params = new URLSearchParams({ symbol: symbolRaw, format: "json"});
+    // call v3
+    const params = new URLSearchParams({ symbol: symbolRaw, format: "json" });
     const url = `${THETA_V3_BASE_URL}/option/list/expirations?${params.toString()}`;
 
     const response = await fetch(url);
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      return res
-        .status(response.status)
-        .json({ error: `Theta v3 response ${response.status}`, detail: body });
+      return res.status(response.status).json({ error: `Theta v3 response ${response.status}`, detail: body });
     }
 
-    // IMPORTANT: read ONCE as text, then parse
-    const raw = await response.text();   // <-- single read
+    const raw = await response.text();
     let payload;
     try {
       payload = JSON.parse(raw);
@@ -249,12 +104,10 @@ app.get("/api/theta/option-expirations", async (req, res) => {
       return res.status(502).json({ error: "Theta v3 returned non-JSON", sample: raw.slice(0, 800) });
     }
 
-    // v3 shape: { symbol: [...], expiration: ["YYYY-MM-DD", ...] }
     const isoList = Array.isArray(payload?.expiration) ? payload.expiration : [];
-
     const seen = new Set(
       isoList
-        .filter((s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s))
+        .filter((s) => typeof s === "string" && isISODate(s))
         .map(toYYYYMMDD)
         .filter((ymd) => Number(ymd) >= Number(cutoff))
     );
@@ -266,6 +119,126 @@ app.get("/api/theta/option-expirations", async (req, res) => {
     return res.json(out);
   } catch (err) {
     console.error("option-expirations (v3) error:", err);
+    return res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+/**
+ * ✅ UPDATED: Options chain via Theta v3 snapshot
+ * Accepts:
+ *   - ?symbol= or ?root=  (SYMBOL)
+ *   - ?exp=YYYYMMDD or YYYY-MM-DD
+ *
+ * Returns (unchanged shape):
+ *   { root, exp, count, results: [{ strike, callBid, callAsk, putBid, putAsk }, ...] }
+ */
+app.get("/api/theta/options-chain", async (req, res) => {
+  try {
+    const isYYYYMMDD = (s) => typeof s === "string" && /^\d{8}$/.test(s);
+    const isISODate = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const ymdToIso = (ymd) => `${ymd.slice(0,4)}-${ymd.slice(4,6)}-${ymd.slice(6,8)}`;
+    const isoToYmd = (iso) => iso.replaceAll("-", "");
+    const normRight = (v) => {
+      const s = String(v ?? "").toUpperCase();
+      if (s === "C" || s === "CALL") return "C";
+      if (s === "P" || s === "PUT") return "P";
+      return null;
+    };
+    const numOrNull = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
+
+    const symbol = (req.query.symbol || req.query.root || "").toString().trim().toUpperCase();
+    let exp = (req.query.exp || "").toString().trim();
+
+    if (!symbol || !/^[A-Z.\-]{1,8}$/.test(symbol)) {
+      return res.status(400).json({ error: "Required query param: symbol/root" });
+    }
+    if (!exp || (!isYYYYMMDD(exp) && !isISODate(exp))) {
+      return res.status(400).json({ error: "Required query param: exp (YYYYMMDD or YYYY-MM-DD)" });
+    }
+
+    const expIso = isISODate(exp) ? exp : ymdToIso(exp);
+    const expYmd = isYYYYMMDD(exp) ? exp : isoToYmd(exp);
+
+    // Build URLs
+    const q = new URLSearchParams({ symbol, expiration: expIso, format: "json" });
+    const urlQuotes = `${THETA_V3_BASE_URL}/option/snapshot/quote?${q.toString()}`;
+    const urlOI     = `${THETA_V3_BASE_URL}/option/snapshot/open_interest?${q.toString()}`;
+
+    // Fetch both in parallel
+    const [respQ, respOI] = await Promise.all([fetch(urlQuotes), fetch(urlOI)]);
+    if (!respQ.ok) {
+      const body = await respQ.text().catch(() => "");
+      return res.status(respQ.status).json({ error: `Theta v3 quotes ${respQ.status}`, detail: body });
+    }
+    if (!respOI.ok) {
+      const body = await respOI.text().catch(() => "");
+      return res.status(respOI.status).json({ error: `Theta v3 open_interest ${respOI.status}`, detail: body });
+    }
+
+    const rawQ  = await respQ.text();
+    const rawOI = await respOI.text();
+
+    let dataQ, dataOI;
+    try { dataQ = JSON.parse(rawQ); } catch { return res.status(502).json({ error: "Theta v3 quotes returned non-JSON", sample: rawQ.slice(0,800) }); }
+    try { dataOI = JSON.parse(rawOI); } catch { return res.status(502).json({ error: "Theta v3 open_interest returned non-JSON", sample: rawOI.slice(0,800) }); }
+
+    // Build a quick lookup for OI keyed by (strike,right)
+    // Try to read OI from common keys: open_interest | oi (fallbacks)
+    const getLen = (obj) => Math.max(...Object.values(obj || {}).map((v) => (Array.isArray(v) ? v.length : 0)), 0);
+    const N_oi = getLen(dataOI);
+    const oiMap = new Map(); // key: `${strike}|${right}` -> number
+    for (let i = 0; i < N_oi; i++) {
+      const strike = numOrNull(dataOI?.strike?.[i]);
+      const right  = normRight(dataOI?.right?.[i]);
+      const oi = (
+        dataOI?.open_interest?.[i] ??
+        dataOI?.oi?.[i] ??
+        null
+      );
+      const oiNum = oi == null ? null : Number(oi);
+      if (strike == null || !right) continue;
+      oiMap.set(`${strike}|${right}`, Number.isFinite(oiNum) ? oiNum : null);
+    }
+
+    // Build rows from quotes and merge OI
+    const N = getLen(dataQ);
+    const byStrike = new Map(); // strike -> row
+    for (let i = 0; i < N; i++) {
+      const strike = numOrNull(dataQ?.strike?.[i]);
+      const right  = normRight(dataQ?.right?.[i]);
+      const bid = numOrNull(dataQ?.bid?.[i]);
+      const ask = numOrNull(dataQ?.ask?.[i]);
+      if (strike == null || !right) continue;
+
+      if (!byStrike.has(strike)) {
+        byStrike.set(strike, {
+          strike,
+          // calls
+          callBid: null, callAsk: null, callOI: null,
+          // puts
+          putBid: null, putAsk: null, putOI: null,
+        });
+      }
+      const row = byStrike.get(strike);
+
+      const key = `${strike}|${right}`;
+      const oiVal = oiMap.get(key) ?? null;
+
+      if (right === "C") {
+        if (bid != null) row.callBid = bid;
+        if (ask != null) row.callAsk = ask;
+        if (oiVal != null) row.callOI = oiVal;
+      } else {
+        if (bid != null) row.putBid = bid;
+        if (ask != null) row.putAsk = ask;
+        if (oiVal != null) row.putOI = oiVal;
+      }
+    }
+
+    const results = Array.from(byStrike.values()).sort((a, b) => a.strike - b.strike);
+    return res.json({ root: symbol, exp: expYmd, count: results.length, results });
+  } catch (err) {
+    console.error("options-chain (v3+OI) error:", err);
     return res.status(500).json({ error: String(err.message || err) });
   }
 });
