@@ -18,11 +18,14 @@ export async function getOptionsChain(root, exp, { signal } = {}) {
 }
 
 
-// services/optionsService.js (example stub)
-export async function getExpirations(root, opts = {}) {
-  // Call Theta Data (or your server) to list expirations for `root`
-  // Return an array like: [{ yyyymmdd: "20250905", label: "Sep 05 (W)" }, ...]
-  const res = await fetch(`/api/theta/option-expirations?root=${encodeURIComponent(root)}`, opts);
-  if (!res.ok) throw new Error(`Expirations fetch failed: ${res.status}`);
-  return await res.json();
+// --- Expirations (v3 via server proxy) ---
+// Returns array of objects: [{ yyyymmdd, label }, ...]
+export async function getExpirations(symbol) {
+  if (!symbol) throw new Error("symbol required");
+  const res = await fetch(`/api/theta/option-expirations?symbol=${encodeURIComponent(symbol)}`);
+  if (!res.ok) throw new Error(`Expirations request failed: ${res.status}`);
+  // Server already filters to today/future and adds labels
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data;
 }

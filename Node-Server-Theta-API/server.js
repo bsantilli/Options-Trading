@@ -7,14 +7,15 @@ import morgan from "morgan";
 dotenv.config();
 
 // Put in .env and load with dotenv in real projects
-//const PORT = process.env.PORT || 5000;
-const THETA_BASE_URL = process.env.THETA_BASE_URL;
+// const PORT = process.env.PORT || 5000;
+const THETA_BASE_URL = process.env.THETA_BASE_URL;            // (v2 or your existing base)
+const THETA_V3_BASE_URL = process.env.THETA_V3_BASE_URL || "http://localhost:25503/v3";
 const PORT = Number(process.env.PORT);
 
 // Optional: configurable CORS origins via env
 const corsOrigins = (process.env.CORS_ORIGINS)
   .split(",")
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
 const app = express();
@@ -22,7 +23,6 @@ app.use(helmet());
 app.use(morgan("dev"));
 app.use(cors({ origin: corsOrigins }));
 app.use(express.json());
-
 
 // Fetch all pages; gracefully handles JSON or NDJSON pages + both pagination styles
 async function fetchAllOptionSnapshotsJSON({ baseUrl, root, exp }) {
@@ -57,9 +57,6 @@ async function fetchAllOptionSnapshotsJSON({ baseUrl, root, exp }) {
 
   return { items: all, header };
 }
-
-
-
 
 // --- helpers ---
 // Parse possible NDJSON OR JSON body into { items[], header? }
@@ -106,8 +103,8 @@ function toStrikeDollars(minor) {
   const n = Number(minor);
   // Heuristic: your sample 20000 → 200.00 (÷100). Some feeds use ÷1000 (e.g., 180000 → 180.00).
   if (n >= 100000) return n / 1000; // 180000 -> 180.000
-  if (n >= 10000) return n / 100;  // 20000  -> 200.00
-  return n / 100;                   // sensible default
+  if (n >= 10000) return n / 100; // 20000  -> 200.00
+  return n / 100; // sensible default
 }
 
 function normRight(v) {
@@ -117,20 +114,13 @@ function normRight(v) {
   return null;
 }
 
-
-
-/**
- * Fetch *all* pages by following the Next-Page header.
- * Returns a single flattened array of snapshot objects.
- */
-// ----------------------------------------------------------------
-// Options chain: Calls | Strike | Puts with Bid/Ask only
-// Replace your /api/theta/options-chain handler with this hardened version.
-// --- route ---
-
 // Health check
 app.get("/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
+/**
+ * Options chain: Calls | Strike | Puts with Bid/Ask only
+ * (unchanged)
+ */
 app.get("/api/theta/options-chain", async (req, res) => {
   try {
     const { root, exp, debug } = req.query;
@@ -138,7 +128,7 @@ app.get("/api/theta/options-chain", async (req, res) => {
       return res.status(400).json({ error: "Required query params: root, exp=YYYYMMDD" });
     }
 
-    const baseUrl = process.env.THETA_BASE_URL /*|| "http://127.0.0.1:25510/v2"*/;
+    const baseUrl = process.env.THETA_BASE_URL /* || "http://127.0.0.1:25510/v2" */;
     const { items, header } = await fetchAllOptionSnapshotsJSON({ baseUrl, root, exp });
 
     // Derive indices from header.format with safe fallbacks
@@ -180,7 +170,8 @@ app.get("/api/theta/options-chain", async (req, res) => {
 
     if (debug === "1") {
       return res.json({
-        root, exp,
+        root,
+        exp,
         format: header?.format || null,
         countIn: items.length,
         countOut: chain.length,
@@ -195,116 +186,89 @@ app.get("/api/theta/options-chain", async (req, res) => {
   }
 });
 
-app.get("/api/theta/option-expirations", async(req, res) => {
-try {
-  const root = String(req.query.root || "").trim().toUpperCase();
-  if (!root || !/^[A-Z.\-]{1,8}$/.test(root)) {
-    return res.status(400).json({ error: "Invalid or missing ?root symbol" });
-  }
+/**
+ * UPDATED: Option expirations via Theta v3
+ * - Accepts ?symbol= or ?root= (back-compat)
+ * - Calls /v3/option/list/expirations
+ * - Returns [{ yyyymmdd, label }, ...] with only today-or-future dates
+ */
+app.get("/api/theta/option-expirations", async (req, res) => {
+  try {
+    const symbolRaw = (req.query.symbol || req.query.root || "").toString().trim().toUpperCase();
+    if (!symbolRaw || !/^[A-Z.\-]{1,8}$/.test(symbolRaw)) {
+      return res.status(400).json({ error: "Invalid or missing ?symbol (or ?root) parameter" });
+    }
 
-  const baseUrl = THETA_BASE_URL || "http://127.0.0.1:25510/v2";
-  const params = new URLSearchParams({ root });
-  let url = `${baseUrl}/list/expirations?${params.toString()}`;
+    // --- helpers ---
+    const toYYYYMMDD = (iso /* 'YYYY-MM-DD' */) => String(iso ?? "").replaceAll("-", "");
+    const yyyymmddToDate = (ymd) => {
+      const y = Number(ymd.slice(0, 4));
+      const m = Number(ymd.slice(4, 6));
+      const d = Number(ymd.slice(6, 8));
+      return new Date(y, m - 1, d);
+    };
+    const isThirdFriday = (dt) => dt.getDay() === 5 && dt.getDate() >= 15 && dt.getDate() <= 21;
+    const labelFor = (ymd) => {
+      const dt = yyyymmddToDate(ymd);
+      const mon = dt.toLocaleString("en-US", { month: "short" });
+      const day = String(dt.getDate()).padStart(2, "0");
+      const base = `${mon} ${day}`;
+      return isThirdFriday(dt) ? base : `${base} (W)`;
+    };
+    const todayYMD = (tz = "America/New_York") => {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date());
+      const obj = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+      return `${obj.year}${obj.month}${obj.day}`;
+    };
+    const cutoff = todayYMD(); // keep today and future only
 
-  // --- helpers ---
-  const asYMD = (v) => {
-    const s = String(v ?? "").trim();
-    return /^\d{8}$/.test(s) ? s : null; // accept numeric or string YYYYMMDD
-  };
-  const yyyymmddToDate = (ymd) => {
-    const y = Number(ymd.slice(0, 4));
-    const m = Number(ymd.slice(4, 6));
-    const d = Number(ymd.slice(6, 8));
-    return new Date(y, m - 1, d);
-  };
-  const isThirdFriday = (dt) => dt.getDay() === 5 && dt.getDate() >= 15 && dt.getDate() <= 21;
-  const labelFor = (ymd) => {
-    const dt = yyyymmddToDate(ymd);
-    const mon = dt.toLocaleString("en-US", { month: "short" });
-    const day = String(dt.getDate()).padStart(2, "0");
-    const base = `${mon} ${day}`;
-    return isThirdFriday(dt) ? base : `${base} (W)`;
-  };
-  const todayYMD = (tz = "America/New_York") => {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(new Date());
-    const obj = Object.fromEntries(parts.map(p => [p.type, p.value]));
-    // en-CA gives YYYY-MM-DD parts
-    return `${obj.year}${obj.month}${obj.day}`;
-  };
-  const cutoff = todayYMD(); // keep today and future only
+    // --- v3 request ---
+    const THETA_V3_BASE_URL = process.env.THETA_V3_BASE_URL || "http://localhost:25503/v3";
+    const params = new URLSearchParams({ symbol: symbolRaw, format: "json"});
+    const url = `${THETA_V3_BASE_URL}/option/list/expirations?${params.toString()}`;
 
-  // --- collect across paginated responses ---
-  const seen = new Set();
-  while (url) {
     const response = await fetch(url);
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      return res.status(response.status).json({ error: `Theta response ${response.status}: ${body}` });
+      return res
+        .status(response.status)
+        .json({ error: `Theta v3 response ${response.status}`, detail: body });
     }
 
-    const text = await response.text();
-
-    // Expected shape per Theta docs:
-    // { "header": { "format": ["date"], ... }, "response": [20241011, 20241018, ...] }
-    let bodyNextPage = null;
-    let parsed = false;
+    // IMPORTANT: read ONCE as text, then parse
+    const raw = await response.text();   // <-- single read
+    let payload;
     try {
-      const obj = JSON.parse(text);
-      if (obj && Array.isArray(obj.response)) {
-        parsed = true;
-        for (const v of obj.response) {
-          const ymd = asYMD(v);
-          if (ymd && Number(ymd) >= Number(cutoff)) seen.add(ymd);
-        }
-        bodyNextPage = obj?.header?.next_page || null;
-      }
+      payload = JSON.parse(raw);
     } catch {
-      // Fallback: NDJSON/line-delimited tolerance (just in case)
+      return res.status(502).json({ error: "Theta v3 returned non-JSON", sample: raw.slice(0, 800) });
     }
 
-    if (!parsed) {
-      for (const line of text.split(/\r?\n/)) {
-        const t = line.trim();
-        if (!t) continue;
-        const direct = asYMD(t);
-        if (direct) {
-          if (Number(direct) >= Number(cutoff)) seen.add(direct);
-          continue;
-        }
-        try {
-          const o = JSON.parse(t);
-          const ymd = asYMD(o?.date ?? o?.yyyymmdd ?? o?.exp ?? o);
-          if (ymd && Number(ymd) >= Number(cutoff)) seen.add(ymd);
-          if (!bodyNextPage && o?.header?.next_page) bodyNextPage = o.header.next_page;
-        } catch { /* ignore */ }
-      }
-    }
+    // v3 shape: { symbol: [...], expiration: ["YYYY-MM-DD", ...] }
+    const isoList = Array.isArray(payload?.expiration) ? payload.expiration : [];
 
-    const headerNext = response.headers.get("Next-Page");
-    url =
-      headerNext && headerNext !== "null"
-        ? headerNext
-        : bodyNextPage && bodyNextPage !== "null"
-        ? bodyNextPage
-        : null;
+    const seen = new Set(
+      isoList
+        .filter((s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s))
+        .map(toYYYYMMDD)
+        .filter((ymd) => Number(ymd) >= Number(cutoff))
+    );
+
+    const out = Array.from(seen)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((yyyymmdd) => ({ yyyymmdd, label: labelFor(yyyymmdd) }));
+
+    return res.json(out);
+  } catch (err) {
+    console.error("option-expirations (v3) error:", err);
+    return res.status(500).json({ error: String(err.message || err) });
   }
-
-  // Normalize + sort ascending + label
-  const out = Array.from(seen)
-    .sort((a, b) => Number(a) - Number(b))
-    .map((yyyymmdd) => ({ yyyymmdd, label: labelFor(yyyymmdd) }));
-
-  return res.json(out);
-} catch (err) {
-  console.error("option-expirations error:", err);
-  return res.status(500).json({ error: String(err.message || err) });
-}
-  });  
+});
 
 
 //*****************************************************************************//
