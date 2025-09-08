@@ -8,7 +8,7 @@ const fmtNum = (n, d = 2) =>
   n === null || n === undefined || Number.isNaN(Number(n)) ? "—" : Number(n).toFixed(d);
 
 export default function OptionsChainAgGrid() {
-  const [ticker, setTicker] = useState("AAPL");
+  const [ticker, setTicker] = useState("");
   const [submittedTicker, setSubmittedTicker] = useState("");
   const [expirations, setExpirations] = useState([]);
   const [activeExpiry, setActiveExpiry] = useState(null);
@@ -16,6 +16,8 @@ export default function OptionsChainAgGrid() {
   const [loadingExp, setLoadingExp] = useState(false);
   const [loadingChain, setLoadingChain] = useState(false);
   const [err, setErr] = useState("");
+  const [expLimit, setExpLimit] = useState("10"); // default to 10
+  const [hoverIdx, setHoverIdx] = useState(null);
 
   // fetch expirations
   const fetchExpirations = async (symbol) => {
@@ -109,6 +111,29 @@ export default function OptionsChainAgGrid() {
         </button>
       </form>
 
+      {/* Expiration limit dropdown */}
+      <div style={{ marginBottom: "12px" }}>
+        <label style={{ marginRight: "8px", fontWeight: 500, color: "#e5e7eb" }}>
+          Show expirations:
+        </label>
+        <select
+          value={expLimit}
+          onChange={(e) => setExpLimit(e.target.value)}
+          style={{
+            padding: "6px 10px",
+            borderRadius: "8px",
+            border: "1px solid #ccc",
+            fontSize: "14px",
+          }}
+        >
+          <option value="5">5</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+
+
       {/* Expiration tabs */}
       {submittedTicker && expirations.length > 0 && (
         <div
@@ -157,7 +182,7 @@ export default function OptionsChainAgGrid() {
             }}
           >
             <div style={{ display: "inline-flex", gap: "8px", padding: "8px" }}>
-              {expirations.map((exp) => {
+              {(expLimit === "all" ? expirations : expirations.slice(0, Number(expLimit))).map((exp) => {
                 const ymd = String(exp.yyyymmdd);
                 const year = Number(ymd.slice(0, 4));
                 const thisYear = new Date().getFullYear();
@@ -185,6 +210,7 @@ export default function OptionsChainAgGrid() {
                   </button>
                 );
               })}
+
             </div>
           </div>
 
@@ -210,37 +236,123 @@ export default function OptionsChainAgGrid() {
         </div>
       )}
 
-      {/* Chain */}
-      {submittedTicker && activeExpiry && (
+{/* Chain */}
+{submittedTicker && activeExpiry && (
+  <div
+    style={{
+      borderRadius: "12px",
+      border: "1px solid #333",
+      width: "100%",
+      maxWidth: "1000px",   // cap overall table width
+      marginRight: "auto",  // center on wide screens
+      backgroundColor: "#1b1b1b",
+    }}
+  >
+    {/* Title bar (non-scrolling) */}
+    <div
+      style={{
+        backgroundColor: "#1b1b1b",
+        color: "white",
+        padding: "10px 14px",
+        borderBottom: "1px solid #333",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
+    >
+      <div style={{ fontWeight: 600 }}>
+        {submittedTicker} Options Chain — {formatExp(activeExpiry)}
+      </div>
+      <div style={{ color: "#9ca3af", fontSize: 12 }}>Calls &nbsp;|&nbsp; Puts</div>
+    </div>
+
+    {/* Scrollable body (headers are sticky inside this container) */}
+    <div
+      style={{
+        maxHeight: "60vh",         // <--- adjust to taste
+        overflowY: "auto",
+        overflowX: "hidden",
+      }}
+    >
+      {/* Grouping header row (sticky) */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 2,
+          display: "grid",
+          gridTemplateColumns: `
+            repeat(3, minmax(80px, 1fr))
+            minmax(80px, 1fr)
+            repeat(3, minmax(80px, 1fr))
+          `,
+          backgroundColor: "#1f1f2e",
+          color: "white",
+          fontSize: 14,
+          fontWeight: 700,
+          borderBottom: "1px solid #444",
+        }}
+      >
+        <div style={{ gridColumn: "1 / span 3", textAlign: "center", padding: "8px 0" }}>
+          PUTS
+        </div>
+        <div style={{ gridColumn: "4 / span 1", textAlign: "center", padding: "8px 0" }}>
+          {formatExp(activeExpiry)}
+        </div>
+        <div style={{ gridColumn: "5 / span 3", textAlign: "center", padding: "8px 0" }}>
+          CALLS
+        </div>
+      </div>
+
+      {/* Column header row (sticky, sits under the grouping header) */}
+      <div
+        style={{
+          position: "sticky",
+          top: 36,                  // <--- match grouping row height (~36px with padding)
+          zIndex: 2,
+          display: "grid",
+          gridTemplateColumns: `
+            repeat(3, minmax(80px, 1fr))
+            minmax(80px, 1fr)
+            repeat(3, minmax(80px, 1fr))
+          `,
+          backgroundColor: "#2a2a40",
+          color: "#e5e7eb",
+          borderBottom: "1px solid #333",
+          fontSize: 13,
+        }}
+      >
+        <CellHeader>Bid/Sell</CellHeader>
+        <CellHeader>Mid</CellHeader>
+        <CellHeader>Ask/Buy</CellHeader>
+        <CellHeader center>Strike</CellHeader>
+        <CellHeader>Bid/Sell</CellHeader>
+        <CellHeader>Mid</CellHeader>
+        <CellHeader>Ask/Buy</CellHeader>
+      </div>
+
+      {/* Data rows (scroll within container) */}
+      {loadingChain && (
+        <div style={{ padding: 16, color: "#cbd5e1" }}>Loading…</div>
+      )}
+      {err && (
         <div
           style={{
-            borderRadius: "12px",
-            border: "1px solid #333",
-            width: "100%",
-            maxWidth: "1000px",   // cap overall table width
-            marginRight: "auto", // center on wide screens
+            padding: 16,
+            background: "#af2b44",
+            color: "white",
+            whiteSpace: "pre-wrap",
           }}
         >
-          {/* Title bar */}
-          <div
-            style={{
-              backgroundColor: "#1b1b1b",
-              color: "white",
-              padding: "10px 14px",
-              borderBottom: "1px solid #333",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div style={{ fontWeight: 600 }}>
-              {submittedTicker} Options Chain — {formatExp(activeExpiry)}
-            </div>
-            <div style={{ color: "#9ca3af", fontSize: 12 }}>Calls &nbsp;|&nbsp; Puts</div>
-          </div>
+          {err}
+        </div>
+      )}
 
-          {/* Header row */}
+      {!loadingChain &&
+        !err &&
+        rows.map((r, idx) => (
           <div
+            key={r.strike}
             style={{
               display: "grid",
               gridTemplateColumns: `
@@ -248,87 +360,43 @@ export default function OptionsChainAgGrid() {
                 minmax(80px, 1fr)
                 repeat(3, minmax(80px, 1fr))
               `,
-              backgroundColor: "#2a2a40",
-              color: "#e5e7eb",
               borderBottom: "1px solid #333",
-              fontSize: 13,
             }}
+            onMouseEnter={() => setHoverIdx(idx)}
+            onMouseLeave={() => setHoverIdx(null)}
           >
-            <CellHeader>Bid/Sell</CellHeader>
-            <CellHeader>Mid</CellHeader>
-            <CellHeader>Ask/Buy</CellHeader>
-            <CellHeader center>Strike</CellHeader>
-            <CellHeader>Bid/Sell</CellHeader>
-            <CellHeader>Mid</CellHeader>
-            <CellHeader>Ask/Buy</CellHeader>
+            {(() => {
+              const isHover = hoverIdx === idx;
+              const rowBg = idx % 2 === 0 ? "#2e2e3e" : "#242424";
+              const strikeBg = "#1d2433";
+              const hoverBg = "#064daaff";
+
+              return (
+                <>
+                  {/* Calls (left side in your current layout) */}
+                  <CellNumber bg={isHover ? hoverBg : rowBg}>{fmtNum(r.callBid)}</CellNumber>
+                  <CellNumber bg={isHover ? hoverBg : rowBg}>
+                    {r.callBid != null && r.callAsk != null ? fmtNum((r.callBid + r.callAsk) / 2) : "—"}
+                  </CellNumber>
+                  <CellNumber bg={isHover ? hoverBg : rowBg}>{fmtNum(r.callAsk)}</CellNumber>
+
+                  {/* Strike */}
+                  <CellStrike bg={isHover ? hoverBg : strikeBg}>{fmtStrike(r.strike)}</CellStrike>
+
+                  {/* Puts (right side) */}
+                  <CellNumber bg={isHover ? hoverBg : rowBg}>{fmtNum(r.putBid)}</CellNumber>
+                  <CellNumber bg={isHover ? hoverBg : rowBg}>
+                    {r.putBid != null && r.putAsk != null ? fmtNum((r.putBid + r.putAsk) / 2) : "—"}
+                  </CellNumber>
+                  <CellNumber bg={isHover ? hoverBg : rowBg}>{fmtNum(r.putAsk)}</CellNumber>
+                </>
+              );
+            })()}
           </div>
-
-          {/* Data rows */}
-          {loadingChain && (
-            <div style={{ padding: 16, color: "#cbd5e1" }}>Loading…</div>
-          )}
-          {err && (
-            <div
-              style={{
-                padding: 16,
-                background: "#af2b44",
-                color: "white",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {err}
-            </div>
-          )}
-          {!loadingChain &&
-            !err &&
-            rows.map((r, idx) => (
-              <div
-                key={r.strike}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `
-                    repeat(3, minmax(80px, 1fr))
-                    minmax(80px, 1fr)
-                    repeat(3, minmax(80px, 1fr))
-                  `,
-                  backgroundColor: idx % 2 === 0 ? "#2e2e3e" : "#242424",
-                  color: "white",
-                  fontSize: 13,
-                  borderBottom: "1px solid #333",
-                  transition: "background-color 120ms ease",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#064daaff")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.backgroundColor =
-                    idx % 2 === 0 ? "#2e2e3e" : "#242424")
-                }
-              >
-                {/* Calls */}
-                <CellNumber>{fmtNum(r.callBid)}</CellNumber>
-                <CellNumber>
-                  {r.callBid != null && r.callAsk != null
-                    ? fmtNum((r.callBid + r.callAsk) / 2)
-                    : "—"}
-                </CellNumber>
-                <CellNumber>{fmtNum(r.callAsk)}</CellNumber>
-
-                {/* Strike */}
-                <CellStrike>{fmtStrike(r.strike)}</CellStrike>
-
-                {/* Puts */}
-                <CellNumber>{fmtNum(r.putBid)}</CellNumber>
-                <CellNumber>
-                  {r.putBid != null && r.putAsk != null
-                    ? fmtNum((r.putBid + r.putAsk) / 2)
-                    : "—"}
-                </CellNumber>
-                <CellNumber>{fmtNum(r.putAsk)}</CellNumber>
-              </div>
-            ))}
-        </div>
-      )}
+        ))}
+    </div>
+  </div>
+)}
     </div>
   );
 }
@@ -352,19 +420,21 @@ const CellHeader = ({ children, center }) => (
   </div>
 );
 
-const CellNumber = ({ children }) => (
-  <div style={{ ...baseCell, textAlign: "center" }}>{children}</div>
+const CellNumber = ({ children, bg }) => (
+  <div style={{ ...baseCell, textAlign: "center", backgroundColor: bg }}>{children}</div>
 );
 
-const CellStrike = ({ children, isHover }) => (
+const CellStrike = ({ children, bg }) => (
   <div
     style={{
       ...baseCell,
       textAlign: "center",
       fontWeight: 600,
-
+      backgroundColor: bg,
     }}
   >
     {children}
   </div>
 );
+
+
