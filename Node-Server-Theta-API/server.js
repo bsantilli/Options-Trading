@@ -163,9 +163,16 @@ app.get("/api/theta/options-chain", async (req, res) => {
     const q = new URLSearchParams({ symbol, expiration: expIso, format: "json" });
     const urlQuotes = `${THETA_V3_BASE_URL}/option/snapshot/quote?${q.toString()}`;
     const urlOI     = `${THETA_V3_BASE_URL}/option/snapshot/open_interest?${q.toString()}`;
+    const urlOHLC   = `${THETA_V3_BASE_URL}/option/snapshot/ohlc?${q.toString()}`;
+
 
     // Fetch both in parallel
-    const [respQ, respOI] = await Promise.all([fetch(urlQuotes), fetch(urlOI)]);
+    const [respQ, respOI, respOHLC] = await Promise.all([
+      fetch(urlQuotes),
+      fetch(urlOI),
+      fetch(urlOHLC),
+    ]);
+
     if (!respQ.ok) {
       const body = await respQ.text().catch(() => "");
       return res.status(respQ.status).json({ error: `Theta v3 quotes ${respQ.status}`, detail: body });
@@ -175,12 +182,20 @@ app.get("/api/theta/options-chain", async (req, res) => {
       return res.status(respOI.status).json({ error: `Theta v3 open_interest ${respOI.status}`, detail: body });
     }
 
+    if (!respOHLC.ok) {
+      const body = await respOHLC.text().catch(() => "");
+      return res.status(respOHLC.status).json({ error: `Theta v3 ohlc ${respOHLC.status}`, detail: body });
+    }
+
     const rawQ  = await respQ.text();
     const rawOI = await respOI.text();
+    const rawOHLC = await respOHLC.text();
 
-    let dataQ, dataOI;
+    let dataQ, dataOI, dataOHLC;
     try { dataQ = JSON.parse(rawQ); } catch { return res.status(502).json({ error: "Theta v3 quotes returned non-JSON", sample: rawQ.slice(0,800) }); }
     try { dataOI = JSON.parse(rawOI); } catch { return res.status(502).json({ error: "Theta v3 open_interest returned non-JSON", sample: rawOI.slice(0,800) }); }
+    try { dataOHLC = JSON.parse(rawOHLC); } catch { return res.status(502).json({ error: "Theta v3 ohlc returned non-JSON", sample: rawOHLC.slice(0,800) }); }
+
 
     // Build a quick lookup for OI keyed by (strike,right)
     // Try to read OI from common keys: open_interest | oi (fallbacks)
@@ -200,6 +215,18 @@ app.get("/api/theta/options-chain", async (req, res) => {
       oiMap.set(`${strike}|${right}`, Number.isFinite(oiNum) ? oiNum : null);
     }
 
+    // ---- NEW: build volume map from OHLC
+    const N_ohlc = getLen(dataOHLC);
+    const volMap = new Map(); // key: `${strike}|${right}` -> number
+    for (let i = 0; i < N_ohlc; i++) {
+      const strike = numOrNull(dataOHLC?.strike?.[i]);
+      const right  = normRight(dataOHLC?.right?.[i]); // "C" | "P"
+      const volRaw = dataOHLC?.volume?.[i];
+      const volNum = volRaw == null ? null : Number(volRaw);
+      if (strike == null || !right) continue;
+      volMap.set(`${strike}|${right}`, Number.isFinite(volNum) ? volNum : null);
+    }
+
     // Build rows from quotes and merge OI
     const N = getLen(dataQ);
     const byStrike = new Map(); // strike -> row
@@ -214,24 +241,27 @@ app.get("/api/theta/options-chain", async (req, res) => {
         byStrike.set(strike, {
           strike,
           // calls
-          callBid: null, callAsk: null, callOI: null,
+          callBid: null, callAsk: null, callOI: null, callVol: null,
           // puts
-          putBid: null, putAsk: null, putOI: null,
+          putBid: null, putAsk: null, putOI: null, putVol: null,
         });
       }
       const row = byStrike.get(strike);
 
       const key = `${strike}|${right}`;
       const oiVal = oiMap.get(key) ?? null;
+      const volVal = volMap.get(key) ?? null;
 
       if (right === "C") {
         if (bid != null) row.callBid = bid;
         if (ask != null) row.callAsk = ask;
         if (oiVal != null) row.callOI = oiVal;
+        if (volVal != null) row.callVol = volVal;
       } else {
         if (bid != null) row.putBid = bid;
         if (ask != null) row.putAsk = ask;
         if (oiVal != null) row.putOI = oiVal;
+        if (volVal != null) row.putVol = volVal;
       }
     }
 
