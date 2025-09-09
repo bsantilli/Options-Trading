@@ -18,7 +18,7 @@ export default defineConfig({
     proxy: {
       // forward /api/* to http://localhost:5000
       "/api": {
-        target: "http://localhost:5000",
+        target: "http://localhost:3001",
         changeOrigin: true,
       },
     },
@@ -32,3 +32,4 @@ export default defineConfig({
     setupFiles: "./src/setupTests.ts", // or .js if you use JS
   },
 });
+
