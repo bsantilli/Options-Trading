@@ -12,7 +12,7 @@ export async function getOptionsChain(root, exp, { signal } = {}) {
   const res = await fetch(url, { signal });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status}${txt ? `: ${txt}` : ""}`);
+    throw new Error(`There was no data found for the symbol: ${root}`);
   }
   return res.json();
 }
@@ -23,7 +23,7 @@ export async function getOptionsChain(root, exp, { signal } = {}) {
 export async function getExpirations(symbol) {
   if (!symbol) throw new Error("symbol required");
   const res = await fetch(`/api/theta/option-expirations?symbol=${encodeURIComponent(symbol)}`);
-  if (!res.ok) throw new Error(`Expirations request failed: ${res.status}`);
+  if (!res.ok) throw new Error(`There was no data found for the symbol: ${symbol}`);
   // Server already filters to today/future and adds labels
   const data = await res.json();
   if (!Array.isArray(data)) return [];

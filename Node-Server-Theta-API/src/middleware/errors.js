@@ -6,4 +6,5 @@ export function errorHandler(err, _req, res, _next) {
   res.status(status).json({
     error: err.message || "Server Error",
   });
+  console.log(err.message);
 }
