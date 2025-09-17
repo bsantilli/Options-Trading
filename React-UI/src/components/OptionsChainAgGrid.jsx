@@ -1,7 +1,7 @@
 // src/components/OptionsChainAgGrid.jsx
 import { useState, useEffect, useMemo, useRef, useLayoutEffect } from "react";
 import { getOptionsChain, getExpirations } from "../services/optionsService";
-import { fmtStrike, formatExp, fmtInt } from "../utils/formatters";
+import { fmtStrike, formatExp, fmtInt, expLabelWithYear } from "../utils/formatters";
 
 // ---------- helpers ----------
 const fmtNum = (n, d = 2) =>
@@ -40,14 +40,13 @@ export default function OptionsChainAgGrid() {
 
   // visible on page load
   const [expLimit, setExpLimit] = useState("10");
-  const [strikeWindow, setStrikeWindow] = useState("all");
+  const [strikeWindow, setStrikeWindow] = useState("25");
 
   // measure table width and sync expiration strip viewport to match
   const tableContentRef = useRef(null);
   const expViewportRef = useRef(null);
   const [expViewportWidth, setExpViewportWidth] = useState(null);
-  const [showLeftBtn, setShowLeftBtn] = useState(false);
-  const [showRightBtn, setShowRightBtn] = useState(false);
+
 
   const BORDER = "#2a2a2a";
   const ROW_BG = "#000000";
@@ -57,6 +56,17 @@ export default function OptionsChainAgGrid() {
   const ITM_BORDER = "#facc15";  // yellow
   const CURRENT_BG = "#0b0b0b";  // slightly off-black for merged current price row
   const BTN_BG = "rgba(17,17,17,0.95)";
+  const BTN_SIZE = 36;
+  
+
+const activeExpObj = useMemo(
+  () => expirations.find((e) => e.yyyymmdd === activeExpiry),
+  [expirations, activeExpiry]
+);
+const activeExpText = useMemo(
+  () => expLabelWithYear(activeExpObj?.label, activeExpObj?.yyyymmdd),
+  [activeExpObj]
+);
 
   const fetchExpirations = async (sym) => {
     setLoadingExp(true);
@@ -162,9 +172,21 @@ export default function OptionsChainAgGrid() {
   const scrollExp = (dir) => {
     const el = expViewportRef.current;
     if (!el) return;
-    const page = Math.max(el.clientWidth * 0.85, 300);
-    el.scrollBy({ left: dir === "left" ? -page : page, behavior: "smooth" });
+
+    // Page ~ one viewport width minus a little padding so pills stay visible
+    const page = Math.max(0, Math.floor(el.clientWidth * 0.9));
+
+    const target =
+      dir === "left"
+        ? el.scrollLeft - page
+        : el.scrollLeft + page;
+
+    // Clamp to valid range so we never throw or overshoot
+    const clamped = Math.max(0, Math.min(target, el.scrollWidth - el.clientWidth));
+
+    el.scrollTo({ left: clamped, behavior: "smooth" });
   };
+
 
   return (
     <div style={{ padding: 16 }}>
@@ -180,7 +202,7 @@ export default function OptionsChainAgGrid() {
       {/* Search & always-visible controls */}
       <form onSubmit={handleSubmit} style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <input
-          placeholder="Enter symbol (e.g., AAPL)"
+          placeholder="symbol"
           value={ticker}
           onChange={(e) => setTicker(e.target.value.toUpperCase())}
           style={{
@@ -256,78 +278,112 @@ export default function OptionsChainAgGrid() {
         </div>
       </form>
 
-      {/* Expiration chips — after Load, left-aligned, width = table width, arrow buttons, no visible scrollbar */}
+      {/* Expiration chips — grid layout with 36px nav buttons, 8px gap, left-aligned, max-width: 1000px, hidden scrollbar */}
       {submittedTicker && expirations.length > 0 && (
         <div
           style={{
-            margin: "8px 0 16px 0",
-            borderRadius: 10,
-            border: `1px solid ${BORDER}`,
-            background: "#000",
-            padding: 8,
+            margin: "12px 0", // the example had margin-bottom: 12px
+            // Keep your color scheme: wrap only the viewport with border/background below
           }}
         >
           <div
             style={{
               position: "relative",
-              width: expViewportWidth ? `${expViewportWidth}px` : "auto", // EXACT width of table
-              maxWidth: "100%",
+              display: "grid",
+              gridTemplateColumns: `${BTN_SIZE}px 1fr ${BTN_SIZE}px`,
+              gap: 8,
+              alignItems: "center",
+              // match the example's max-width and left alignment
+              maxWidth: "1000px",
+              marginRight: "auto",
             }}
           >
-            {/* viewport — left aligned (no centering), scrollbar hidden via class */}
+            {/* Left button */}
+            <button
+              type="button"
+              onClick={() => scrollExp("left")}
+              aria-label="Scroll expirations left"
+              onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.97)")}
+              onMouseUp={(e) => (e.currentTarget.style.transform = "none")}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}
+              style={{
+                height: BTN_SIZE,
+                width: BTN_SIZE,
+                borderRadius: 10,
+                border: `1px solid ${BORDER}`,
+                background: "#0e0f0fff",
+                color: "#e5e7eb",
+                cursor: "pointer",
+                fontSize: 20,
+                lineHeight: 1,
+                opacity: 1,
+              }}
+            >
+              ‹
+            </button>
+
+            {/* Scroll viewport (center column) */}
             <div
+              id="exp-scroll-wrap"
               ref={expViewportRef}
               className="no-scrollbar"
               style={{
-                overflowX: "auto",         // still scrollable, but scrollbar hidden
-                overflowY: "hidden",
+                overflow: "auto hidden",                // horizontal scroll enabled, vertical hidden
                 whiteSpace: "nowrap",
+                border: `1px solid ${BORDER}`,
+                borderRadius: 12,
+                background: "#0e0f0fff",                  // keep your dark scheme; change if desired
+                // In the example, width is unconstrained except by max-width. If you want to force
+                // exactly table width instead, add: width: expViewportWidth ? `${expViewportWidth}px` : "auto"
               }}
             >
-              <div style={{ display: "inline-flex", gap: 8, paddingBottom: 2 }}>
-                {(expLimit === "all" ? expirations : expirations.slice(0, Number(expLimit))).map((ex) => (
+              {/* inner rail */}
+              <div style={{ display: "inline-flex", gap: 8, padding: 8 }}>
+                {expirations.map((ex) => (
                   <button
                     key={ex.yyyymmdd}
                     onClick={() => setActiveExpiry(ex.yyyymmdd)}
                     style={{
-                      padding: "6px 10px",
-                      borderRadius: 20,
-                      border: activeExpiry === ex.yyyymmdd ? "2px solid #0b3a74ff" : `1px solid ${BORDER}`,
-                      background: activeExpiry === ex.yyyymmdd ? "#0a0a0a" : "#000",
+                      border: `1px solid ${BORDER}`,                       // example had rgb(58,58,85); keep your border
+                      backgroundColor: activeExpiry === ex.yyyymmdd ? "#696969ff" : "#0e0f0fff",
                       color: "white",
+                      padding: "6px 10px",
+                      borderRadius: 10,
                       cursor: "pointer",
-                      whiteSpace: "nowrap",
                       fontSize: 13,
                       flex: "0 0 auto",
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    {ex.label}
+                    {expLabelWithYear(ex.label, ex.yyyymmdd)}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* left/right scroll buttons (only when needed), hugging the edges */}
-            {showLeftBtn && (
-              <button
-                type="button"
-                onClick={() => scrollExp("left")}
-                aria-label="Scroll expirations left"
-                style={arrowBtnStyle("left", BTN_BG)}
-              >
-                ‹
-              </button>
-            )}
-            {showRightBtn && (
-              <button
-                type="button"
-                onClick={() => scrollExp("right")}
-                aria-label="Scroll expirations right"
-                style={arrowBtnStyle("right", BTN_BG)}
-              >
-                ›
-              </button>
-            )}
+            {/* Right button */}
+            <button
+              type="button"
+              onClick={() => scrollExp("right")}
+              aria-label="Scroll expirations right"
+              onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.97)")}
+              onMouseUp={(e) => (e.currentTarget.style.transform = "none")}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}
+              style={{
+                height: BTN_SIZE,
+                width: BTN_SIZE,
+                borderRadius: 10,
+                border: `1px solid ${BORDER}`,
+                background: "#0e0f0fff",
+                color: "#e5e7eb",
+                cursor: "pointer",
+                fontSize: 20,
+                lineHeight: 1,
+                opacity: 1,
+              }}
+            >
+              ›
+            </button>
           </div>
         </div>
       )}
@@ -391,7 +447,7 @@ export default function OptionsChainAgGrid() {
                   style={{
                     display: "grid",
                     gridTemplateColumns: GRID_COLS,
-                    padding: "6px 0 2px 0",
+                    padding: "6px 0 6px 0",
                     color: "#e5e7eb",
                     backgroundColor: HEAD_BG1,
                     borderBottom: `1px solid ${BORDER}`,
@@ -402,7 +458,7 @@ export default function OptionsChainAgGrid() {
                   }}
                 >
                   <div style={{ gridColumn: "1 / span 6", textAlign: "center", letterSpacing: 1 }}>Calls</div>
-                  <div style={{ gridColumn: "7 / span 1", textAlign: "center" }} />
+                    <div style={{gridColumn: "7 / span 1", textAlign: "center", textTransform: "none", letterSpacing: 0.5, fontSize:17, fontWeight: 700,}}>{activeExpText || ""}</div>
                   <div style={{ gridColumn: "8 / span 6", textAlign: "center", letterSpacing: 1 }}>Puts</div>
                 </div>
 
@@ -415,7 +471,7 @@ export default function OptionsChainAgGrid() {
                     color: "#e5e7eb",
                     backgroundColor: HEAD_BG2,
                     borderBottom: `1px solid ${BORDER}`,
-                    fontSize: 12,
+                    fontSize: 14,
                     width: "max-content",
                   }}
                 >

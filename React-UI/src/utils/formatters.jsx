@@ -17,3 +17,15 @@ export const fmtInt = (n) =>
   n === null || n === undefined || Number.isNaN(Number(n))
     ? "—"
     : Math.round(Number(n)).toLocaleString();
+
+export const expLabelWithYear = (label, yyyymmdd) => {
+  const CURRENT_YEAR = new Date().getFullYear();
+  if (!label || !yyyymmdd || yyyymmdd.length < 4) return label || "";
+  const yr = Number(yyyymmdd.slice(0, 4));
+  if (!Number.isFinite(yr) || yr === CURRENT_YEAR) return label;
+
+  const shortYr = String(yr % 100).padStart(2, "0");
+  // Always append at end so "(W)" stays where it is: "Oct 24 (W) '26"
+  const alreadyHas = label.includes(`'${shortYr}`);
+  return alreadyHas ? label : `${label} '${shortYr}`;
+};
