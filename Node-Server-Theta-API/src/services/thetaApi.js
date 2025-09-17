@@ -15,9 +15,14 @@ async function getJson(url, cacheKey) {
   if (!resp.ok) {
     throw new Error(`Theta ${url} -> ${resp.status}: ${raw.slice(0,300)}`);
   }
+
+  // auto-parse json if possible
   let data;
-  try { data = JSON.parse(raw); }
-  catch { throw new Error(`Theta returned non-JSON for ${url}: ${raw.slice(0,400)}`); }
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    data = raw;
+  }
 
   cacheSet(cacheKey, data, cfg.THETA_CACHE_TTL_MS);
   return data;
@@ -41,4 +46,9 @@ export async function snapshotOpenInterest(symbol, expIso) {
 export async function snapshotOHLC(symbol, expIso) {
   const q = new URLSearchParams({ symbol, expiration: expIso, format: "json" });
   return getJson(`${base}/option/snapshot/ohlc?${q.toString()}`, `ohlc:${symbol}:${expIso}`);
+}
+
+export async function snapshotImpliedVol(symbol, expIso) {
+  const q = new URLSearchParams({ symbol, expiration: expIso, format: "json" });
+  return getJson(`${base}/option/snapshot/greeks/implied_volatility?${q.toString()}`, `iv:${symbol}:${expIso}`);
 }
