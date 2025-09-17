@@ -3,6 +3,18 @@ import { useState, useEffect, useMemo, useRef, useLayoutEffect } from "react";
 import { getOptionsChain, getExpirations } from "../services/optionsService";
 import { fmtStrike, formatExp, fmtInt, expLabelWithYear } from "../utils/formatters";
 
+  const BORDER = "#2a2a2a";
+  const ROW_BG = "#000000";
+  const STRIKE_BG = "#3f4861ff";   // subtle contrast for strike column
+  const HEAD_BG1 = "#111111";    // group header bg
+  const HEAD_BG2 = "#151515";    // column labels bg
+  const ITM_BORDER = "#facc15";  // yellow
+  const CURRENT_BG = "#0b0b0b";  // slightly off-black for merged current price row
+  const BTN_BG = "rgba(17,17,17,0.95)";
+  const BTN_SIZE = 36;
+  
+
+
 // ---------- helpers ----------
 const fmtNum = (n, d = 2) =>
   n === null || n === undefined || Number.isNaN(Number(n)) ? "—" : Number(n).toFixed(d);
@@ -48,16 +60,7 @@ export default function OptionsChainAgGrid() {
   const [expViewportWidth, setExpViewportWidth] = useState(null);
 
 
-  const BORDER = "#2a2a2a";
-  const ROW_BG = "#000000";
-  const STRIKE_BG = "#0d0d0d";   // subtle contrast for strike column
-  const HEAD_BG1 = "#111111";    // group header bg
-  const HEAD_BG2 = "#151515";    // column labels bg
-  const ITM_BORDER = "#facc15";  // yellow
-  const CURRENT_BG = "#0b0b0b";  // slightly off-black for merged current price row
-  const BTN_BG = "rgba(17,17,17,0.95)";
-  const BTN_SIZE = 36;
-  
+
 
 const activeExpObj = useMemo(
   () => expirations.find((e) => e.yyyymmdd === activeExpiry),
@@ -139,16 +142,8 @@ const activeExpText = useMemo(
     if (!tableContentRef.current) return;
     const w = Math.round(tableContentRef.current.getBoundingClientRect().width);
     setExpViewportWidth(w);
-    requestAnimationFrame(updateArrowVisibility);
   };
 
-  const updateArrowVisibility = () => {
-    const el = expViewportRef.current;
-    if (!el) return;
-    const { scrollLeft, scrollWidth, clientWidth } = el;
-    setShowLeftBtn(scrollLeft > 0);
-    setShowRightBtn(scrollLeft + clientWidth < scrollWidth - 1);
-  };
 
   useLayoutEffect(() => {
     if (!showTable) return;
@@ -481,7 +476,13 @@ const activeExpText = useMemo(
                   <CellHeader nowrap>Bid/Sell</CellHeader>
                   <CellHeader nowrap>Mid</CellHeader>
                   <CellHeader nowrap>Ask/Buy</CellHeader>
-                  <CellHeader nowrap center>Strike</CellHeader>
+                  <CellHeader
+  nowrap
+  center
+  style={{ backgroundColor: STRIKE_BG, fontWeight: 700 }}
+>
+  Strike
+</CellHeader>
                   <CellHeader nowrap>Bid/Sell</CellHeader>
                   <CellHeader nowrap>Mid</CellHeader>
                   <CellHeader nowrap>Ask/Buy</CellHeader>
@@ -519,7 +520,7 @@ const activeExpText = useMemo(
                           display: "grid",
                           gridTemplateColumns: GRID_COLS,
                           borderBottom: `1px solid ${BORDER}`,
-                          backgroundColor: CURRENT_BG,
+                          backgroundColor: "#242425ff",
                           width: "max-content",
                         }}
                       >
@@ -585,19 +586,22 @@ const activeExpText = useMemo(
 /* ---------- Presentational helpers ---------- */
 const baseCell = {
   padding: "8px 10px",         // identical in header & data -> alignment
-  borderRight: "1px solid #2a2a2a",
+  borderRight: "1px solid ${BORDER}",
   minWidth: 60,
   textAlign: "center",
   color: "#E5E7EB",
   whiteSpace: "nowrap",
 };
 
-const CellHeader = ({ children }) => (
+const CellHeader = ({ children, style = {}, center, nowrap }) => (
   <div
     style={{
       ...baseCell,
       fontWeight: 700,
       background: "transparent",
+      ...(center ? { textAlign: "center" } : {}),
+      ...(nowrap ? { whiteSpace: "nowrap" } : {}),
+      ...style,
     }}
   >
     {children}
@@ -620,7 +624,7 @@ const CellStrike = ({ children, style = {} }) => (
     style={{
       ...baseCell,
       fontWeight: 600,
-      backgroundColor: "#0d0d0d",
+      backgroundColor: STRIKE_BG,
       ...style,
     }}
   >
