@@ -3,16 +3,19 @@ import { useState, useEffect, useMemo, useRef, useLayoutEffect } from "react";
 import { getOptionsChain, getExpirations } from "../services/optionsService";
 import { fmtStrike, formatExp, fmtInt, expLabelWithYear } from "../utils/formatters";
 
-  const BORDER = "#2a2a2a";
-  const ROW_BG = "#000000";
-  const STRIKE_BG = "#3f4861ff";   // subtle contrast for strike column
-  const HEAD_BG1 = "#111111";    // group header bg
-  const HEAD_BG2 = "#151515";    // column labels bg
-  const ITM_BORDER = "#facc15";  // yellow
-  const CURRENT_BG = "#0b0b0b";  // slightly off-black for merged current price row
-  const BTN_BG = "rgba(17,17,17,0.95)";
-  const BTN_SIZE = 36;
-  
+const BORDER = "#222121ff";
+const ROW_BG = "#030303ff";
+const STRIKE_BG = "#3f4861ff";   // subtle contrast for strike column
+const HEAD_BG1 = "#111111";    // group header bg
+const HEAD_BG2 = "#151515";    // column labels bg
+const ITM_BORDER = "#facc15";  // yellow
+const CURRENT_BG = "#0b0b0b";  // slightly off-black for merged current price row
+const BTN_BG = "rgba(17,17,17,0.95)";
+const BTN_SIZE = 36;
+
+// NEW: hover colors (tweak to taste)
+const ROW_HOVER_BG = "#1e2e4dff"; // full-row hover
+const CELL_HOVER_BG = "#1f42b3ff"; // hovered cell (within hovered row)
 
 
 // ---------- helpers ----------
@@ -62,14 +65,14 @@ export default function OptionsChainAgGrid() {
 
 
 
-const activeExpObj = useMemo(
-  () => expirations.find((e) => e.yyyymmdd === activeExpiry),
-  [expirations, activeExpiry]
-);
-const activeExpText = useMemo(
-  () => expLabelWithYear(activeExpObj?.label, activeExpObj?.yyyymmdd),
-  [activeExpObj]
-);
+  const activeExpObj = useMemo(
+    () => expirations.find((e) => e.yyyymmdd === activeExpiry),
+    [expirations, activeExpiry]
+  );
+  const activeExpText = useMemo(
+    () => expLabelWithYear(activeExpObj?.label, activeExpObj?.yyyymmdd),
+    [activeExpObj]
+  );
 
   const fetchExpirations = async (sym) => {
     setLoadingExp(true);
@@ -154,15 +157,6 @@ const activeExpText = useMemo(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showTable, activeExpiry, rows, strikeWindow]);
 
-  useEffect(() => {
-    const el = expViewportRef.current;
-    if (!el) return;
-    const onScroll = () => updateArrowVisibility();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    updateArrowVisibility();
-    return () => el.removeEventListener("scroll", onScroll);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expViewportWidth]);
 
   const scrollExp = (dir) => {
     const el = expViewportRef.current;
@@ -187,11 +181,23 @@ const activeExpText = useMemo(
     <div style={{ padding: 16 }}>
       {/* hide native scrollbars for the exp viewport only */}
       <style>{`
+        /* Hide native scrollbars for the exp viewport only */
         .no-scrollbar {
           scrollbar-width: none;         /* Firefox */
           -ms-overflow-style: none;      /* IE/Edge legacy */
         }
         .no-scrollbar::-webkit-scrollbar { display: none; } /* WebKit */
+
+        /* Hover highlighting: rows & cells (pure CSS, no JS state) */
+        .oc-row:hover {
+          --cell-bg: ${ROW_HOVER_BG};
+          --cell-bg-strike: ${ROW_HOVER_BG};
+        }
+        /* When a cell inside a hovered row is hovered, give it a different color */
+        .oc-row:hover  .oc-cell:hover {
+          --cell-bg: ${CELL_HOVER_BG};
+          --cell-bg-strike: ${CELL_HOVER_BG};
+        }
       `}</style>
 
       {/* Search & always-visible controls */}
@@ -218,10 +224,11 @@ const activeExpText = useMemo(
           style={{
             padding: "10px 16px",
             borderRadius: 10,
-            background: "#2563eb",
+            background: "#25324dff",
             color: "white",
             border: "none",
             fontWeight: 700,
+            fontSize: 16,
             cursor: "pointer",
             minWidth: 110,
           }}
@@ -260,7 +267,7 @@ const activeExpText = useMemo(
               padding: "8px 10px",
               borderRadius: 10,
               border: `1px solid ${BORDER}`,
-              background: "#000",
+              background: "#000000ff",
               color: "white",
             }}
           >
@@ -289,7 +296,7 @@ const activeExpText = useMemo(
               gap: 8,
               alignItems: "center",
               // match the example's max-width and left alignment
-              maxWidth: "1000px",
+              width: expViewportWidth ? `${expViewportWidth}px` : "auto",
               marginRight: "auto",
             }}
           >
@@ -327,7 +334,7 @@ const activeExpText = useMemo(
                 whiteSpace: "nowrap",
                 border: `1px solid ${BORDER}`,
                 borderRadius: 12,
-                background: "#0e0f0fff",                  // keep your dark scheme; change if desired
+                background: "#090a0aff",                  // keep your dark scheme; change if desired
                 // In the example, width is unconstrained except by max-width. If you want to force
                 // exactly table width instead, add: width: expViewportWidth ? `${expViewportWidth}px` : "auto"
               }}
@@ -392,7 +399,8 @@ const activeExpText = useMemo(
             overflow: "hidden",
             fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
             backgroundColor: "#000",
-            width: "100%",
+            width: "max-content",   // ⬅️ shrink to table
+            maxWidth: "100%",       // don’t overflow viewport
           }}
         >
           {/* Title bar */}
@@ -432,7 +440,13 @@ const activeExpText = useMemo(
           </div>
 
           {/* Scrollable body (vertical only) */}
-          <div style={{ maxHeight: "64vh", overflowY: "auto" }}>
+          <div style={{
+            maxHeight: "64vh",
+            overflowY: "auto",
+            width: "max-content",         // ⬅️ match table width
+            scrollbarGutter: "stable",    // ⬅️ keeps a fixed gutter for the vertical scrollbar
+            paddingRight: 12,          // Safari fallback so the scrollbar doesn't overlap cells
+          }}>
             {/* CONTENT SHELL: ensures headers & rows share the same exact width */}
             <div ref={tableContentRef} style={{ width: "max-content" }}>
               {/* Sticky header wrapper MUST match content width */}
@@ -453,7 +467,7 @@ const activeExpText = useMemo(
                   }}
                 >
                   <div style={{ gridColumn: "1 / span 6", textAlign: "center", letterSpacing: 1 }}>Calls</div>
-                    <div style={{gridColumn: "7 / span 1", textAlign: "center", textTransform: "none", letterSpacing: 0.5, fontSize:17, fontWeight: 700,}}>{activeExpText || ""}</div>
+                  <div style={{ gridColumn: "7 / span 1", textAlign: "center", textTransform: "none", letterSpacing: 0.5, fontSize: 17, fontWeight: 700, }}>{activeExpText || ""}</div>
                   <div style={{ gridColumn: "8 / span 6", textAlign: "center", letterSpacing: 1 }}>Puts</div>
                 </div>
 
@@ -477,12 +491,12 @@ const activeExpText = useMemo(
                   <CellHeader nowrap>Mid</CellHeader>
                   <CellHeader nowrap>Ask/Buy</CellHeader>
                   <CellHeader
-  nowrap
-  center
-  style={{ backgroundColor: STRIKE_BG, fontWeight: 700 }}
->
-  Strike
-</CellHeader>
+                    nowrap
+                    center
+                    style={{ backgroundColor: STRIKE_BG, fontWeight: 700 }}
+                  >
+                    Strike
+                  </CellHeader>
                   <CellHeader nowrap>Bid/Sell</CellHeader>
                   <CellHeader nowrap>Mid</CellHeader>
                   <CellHeader nowrap>Ask/Buy</CellHeader>
@@ -515,6 +529,7 @@ const activeExpText = useMemo(
                     // Single merged cell row spanning all 13 columns
                     return (
                       <div
+                        className="oc-row"
                         key={`last-${idx}`}
                         style={{
                           display: "grid",
@@ -541,6 +556,7 @@ const activeExpText = useMemo(
 
                   return (
                     <div
+                      className="oc-row"
                       key={r.strike}
                       style={{
                         display: "grid",
@@ -585,12 +601,13 @@ const activeExpText = useMemo(
 
 /* ---------- Presentational helpers ---------- */
 const baseCell = {
-  padding: "8px 10px",         // identical in header & data -> alignment
-  borderRight: "1px solid ${BORDER}",
+  padding: "6px 8px",         // identical in header & data -> alignment
+  borderRight: `1px solid ${BORDER}`,
   minWidth: 60,
   textAlign: "center",
   color: "#E5E7EB",
   whiteSpace: "nowrap",
+  transition: "background-color 120ms ease",
 };
 
 const CellHeader = ({ children, style = {}, center, nowrap }) => (
@@ -608,23 +625,26 @@ const CellHeader = ({ children, style = {}, center, nowrap }) => (
   </div>
 );
 
-const CellNumber = ({ children }) => (
+const CellNumber = ({ children, style = {}, className = "" }) => (
   <div
+    className={`oc-cell ${className}`}
     style={{
       ...baseCell,
-      backgroundColor: "#000",
+      backgroundColor: "var(--cell-bg, #000)", // default to row bg; overridden on hover
+      ...style,
     }}
   >
     {children}
   </div>
 );
 
-const CellStrike = ({ children, style = {} }) => (
+const CellStrike = ({ children, style = {}, className = "" }) => (
   <div
+    className={`oc-cell oc-strike ${className}`}
     style={{
       ...baseCell,
       fontWeight: 600,
-      backgroundColor: STRIKE_BG,
+      backgroundColor: `var(--cell-bg-strike, ${STRIKE_BG})`, // default strike bg; overridden on hover
       ...style,
     }}
   >
