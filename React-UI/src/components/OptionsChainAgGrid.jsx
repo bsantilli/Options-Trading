@@ -62,7 +62,7 @@ export default function OptionsChainAgGrid() {
   const expViewportRef = useRef(null);
   const [expViewportWidth, setExpViewportWidth] = useState(null);
 
-
+  const busy = loadingExp || loadingChain;
 
 
   const activeExpObj = useMemo(
@@ -158,23 +158,49 @@ export default function OptionsChainAgGrid() {
   }, [showTable, activeExpiry, rows, strikeWindow]);
 
 
-  const scrollExp = (dir) => {
-    const el = expViewportRef.current;
-    if (!el) return;
+ // Refresh expirations (preserve current selection if possible) and chain
+ const refreshAll = async () => {
+   if (!submittedTicker) return;
+   setErr("");
+   try {
+     setLoadingExp(true);
+     const list = await getExpirations(submittedTicker);
+     setExpirations(list);
+     // pick current if still present; else first
+     const effExpiry =
+       activeExpiry && list.some(e => e.yyyymmdd === activeExpiry)
+         ? activeExpiry
+         : (list?.[0]?.yyyymmdd || null);
+     setActiveExpiry(prev => effExpiry); // no-op if unchanged
+   } catch (e) {
+     setErr(String(e.message || e));
+     setExpirations([]);
+     setActiveExpiry(null);
+   } finally {
+     setLoadingExp(false);
+   }
 
-    // Page ~ one viewport width minus a little padding so pills stay visible
-    const page = Math.max(0, Math.floor(el.clientWidth * 0.9));
-
-    const target =
-      dir === "left"
-        ? el.scrollLeft - page
-        : el.scrollLeft + page;
-
-    // Clamp to valid range so we never throw or overshoot
-    const clamped = Math.max(0, Math.min(target, el.scrollWidth - el.clientWidth));
-
-    el.scrollTo({ left: clamped, behavior: "smooth" });
-  };
+   // Load chain for the effective expiry
+   try {
+     const eff =
+       activeExpiry && expirations.some(e => e.yyyymmdd === activeExpiry)
+         ? activeExpiry
+         : (expirations?.[0]?.yyyymmdd || null);
+     if (!eff) {
+       setRows([]); setUnderlying(null);
+       return;
+     }
+     setLoadingChain(true);
+     const data = await getOptionsChain(submittedTicker, eff);
+     setRows(data.results || []);
+     setUnderlying(data.underlying || null);
+   } catch (e) {
+     setErr(String(e.message || e));
+     setRows([]);
+   } finally {
+     setLoadingChain(false);
+   }
+ };
 
 
   return (
@@ -434,9 +460,40 @@ export default function OptionsChainAgGrid() {
                 </div>
               )}
             </div>
-            <div style={{ textAlign: "right", color: "#9ca3af", fontSize: 12 }}>
-              {underlying && <>As of {formatET(underlying.timestamp)} ET</>}
-            </div>
+ <div style={{
+   display: "flex",
+   alignItems: "center",
+   gap: 8,
+   color: "#9ca3af",
+   fontSize: 12,
+ }}>
+   <div>
+     {underlying && <>As of {formatET(underlying.timestamp)} ET</>}
+   </div>
+   <button
+     type="button"
+     onClick={refreshAll}
+     aria-label="Refresh data"
+     title="Refresh data"
+     disabled={busy}
+     style={{
+      
+       height: 40,
+       minWidth: 40,
+       padding: "0 8px",
+       borderRadius: 8,
+       border: `1px solid ${BORDER}`,
+       background: "#2d2e2eff",
+       color: "#e5e7eb",
+       cursor: busy ? "wait" : "pointer",
+       opacity: busy ? 0.7 : 1,
+       lineHeight: "26px",
+       fontWeight: 700,
+     }}
+   >
+     Refresh
+   </button>
+ </div>
           </div>
 
           {/* Scrollable body (vertical only) */}
